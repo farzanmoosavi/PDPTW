@@ -640,7 +640,7 @@ def train():
             cost = rollout(actor, valid_loder, batch_size, steps)
             cost = cost.mean()
             costs.append(cost.item())
-
+            np.savetxt('myarray.txt', costs)
             print('Problem:TSP''%s' % n_nodes, '/ Average distance:', cost.item())
             print(costs)
 
