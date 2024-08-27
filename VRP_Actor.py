@@ -857,8 +857,8 @@ class Encoder(nn.Module):
         super(Encoder, self).__init__()
         self.hidden_node_dim = hidden_node_dim
         self.hidden_edge_dim = hidden_edge_dim
-        # self.W0 = nn.Linear(input_dim, hidden_node_dim, bias=False)
-        # self.b0 = nn.BatchNorm1d(hidden_node_dim)
+        self.W0 = nn.Linear(input_dim, hidden_node_dim, bias=False)
+        self.b0 = nn.BatchNorm1d(hidden_node_dim)
         self.W1 = nn.Linear(2 * input_dim, hidden_node_dim, bias=False)
         self.W2 = nn.Linear(input_dim, hidden_node_dim, bias=False)
         self.b1 = nn.BatchNorm1d(hidden_node_dim)
@@ -899,7 +899,7 @@ class Encoder(nn.Module):
         emb_delivery = dataset[:, num_depots + num_nodes // 2:num_depots + num_nodes, :].reshape(
             batch_size * num_nodes // 2, input_dim)
 
-        emb_depot = self.b2(self.W2(emb_depot)).view(batch_size, -1, self.hidden_node_dim)
+        emb_depot = self.b0(self.W0(emb_depot)).view(batch_size, -1, self.hidden_node_dim)
 
         emb_pickup = self.b1(self.W1(emb_pickup)).view(batch_size, -1, self.hidden_node_dim)
 
@@ -1183,12 +1183,10 @@ class Decoder1(nn.Module):
         mask1 = emb_d.new_zeros((batch_size, num_drones + num_robots, emb_d.size(1)))
         mask = emb_d.new_zeros((batch_size, num_drones + num_robots, emb_d.size(1)))
 
-        battery = battery.view(batch_size, num_drones + num_robots).unsqueeze(2).float().to(
-            device)  # (batch_size, num_agents, 1)
+        battery = battery.view(batch_size, num_drones + num_robots).unsqueeze(2).float().cuda()  # (batch_size, num_agents, 1)
         capacity = capacity.view(batch_size, num_drones + num_robots).unsqueeze(
             2).float()  # (batch_size, num_agents, 1)
-        T_t = torch.zeros(batch_size, num_drones + num_robots).unsqueeze(2).float().to(
-            device)  # (batch_size, num_agents, 1)
+        T_t = torch.zeros(batch_size, num_drones + num_robots).unsqueeze(2).float().cuda()  # (batch_size, num_agents, 1)
         demands = demand.view(batch_size, emb_d.size(1))
         time_window = time_window.view(batch_size, emb_d.size(1))
         edge_attr_d = edge_attr_d.view(batch_size, num_depots + num_nodes, num_depots + num_nodes)
@@ -1213,7 +1211,7 @@ class Decoder1(nn.Module):
             if not (mask1[:, :, num_depots:].max(dim=1)[0]).eq(0).any() or i > num_nodes:
                 break
             if i == 0:
-                depot_indices = torch.randint(0, num_depots, (batch_size, num_drones + num_robots)).to(device)
+                depot_indices = torch.randint(0, num_depots, (batch_size, num_drones + num_robots)).cuda()
                 index = depot_indices
 
                 s_t = torch.gather(emb_d, 1, depot_indices.unsqueeze(2).expand(-1, -1, emb_d.size(
@@ -1262,7 +1260,7 @@ class Decoder1(nn.Module):
             dist = Categorical(p)
             if greedy:
                 # val, index = p.max(dim=-1)
-                ask = torch.zeros(batch_size, num_nodes+num_depots, dtype=torch.bool).to(device)
+                ask = torch.zeros(batch_size, num_nodes+num_depots, dtype=torch.bool).cuda()
 
                 # Initialize a tensor to hold the selected indices
                 # selected_indices = torch.full((batch_size, num_drones+num_robots), -1, dtype=torch.long)
@@ -1328,295 +1326,6 @@ class Decoder1(nn.Module):
 
         return actions, torch.cat(log_ps, dim=2).sum(dim=2), torch.cat(time_log, dim=2), torch.cat(BL, dim=2)
 
-
-# class Model(nn.Module):
-#     def __init__(self, input_node_dim, hidden_node_dim, input_edge_dim, hidden_edge_dim, conv_laysers):
-#         super(Model, self).__init__()
-#         self.encoder = Encoder(input_node_dim, hidden_node_dim, input_edge_dim, hidden_edge_dim, conv_laysers)
-#         self.decoder = Decoder1(hidden_node_dim, hidden_node_dim)
-
-
-# class Attention1(nn.Module):
-#     def __init__(self, n_heads, cat, input_dim, hidden_dim, attn_dropout=0.1, dropout=0):
-#         super(Attention1, self).__init__()
-#
-#         self.n_heads = n_heads
-#         self.input_dim = input_dim
-#         self.hidden_dim = hidden_dim
-#         self.head_dim = hidden_dim // n_heads
-#         self.norm = 1 / math.sqrt(self.head_dim)
-#
-#         self.w = nn.Linear(input_dim * cat, hidden_dim, bias=False)
-#         self.k = nn.Linear(input_dim, hidden_dim, bias=False)
-#         self.v = nn.Linear(input_dim, hidden_dim, bias=False)
-#         self.fc = nn.Linear(hidden_dim, hidden_dim, bias=False)
-#
-#         if INIT:
-#             for name, p in self.named_parameters():
-#                 if 'weight' in name:
-#                     if len(p.size()) >= 2:
-#                         nn.init.orthogonal_(p, gain=1)
-#                 elif 'bias' in name:
-#                     nn.init.constant_(p, 0)
-#
-#     # @autocast(device_type='cuda')
-#     def forward(self, state_t, context, mask):
-#         '''
-#         :param state_t: (batch_size, num_agents, input_dim * cat)
-#         :param context: (batch_size, n_nodes, input_dim)
-#         :param mask: selected nodes (batch_size, n_nodes)
-#         :return:
-#         '''
-#         batch_size, num_agents, _ = state_t.size()
-#         n_nodes = context.size(1)
-#
-#         Q = self.w(state_t).view(batch_size, num_agents, self.n_heads, self.head_dim)
-#         K = self.k(context).view(batch_size, n_nodes, self.n_heads, self.head_dim)
-#         V = self.v(context).view(batch_size, n_nodes, self.n_heads, self.head_dim)
-#
-#         Q, K, V = Q.transpose(1, 2), K.transpose(1, 2), V.transpose(1, 2)
-#
-#         compatibility = self.norm * torch.matmul(Q, K.transpose(2,
-#                                                                 3))  # (batch_size, n_heads, num_agents, head_dim) * (batch_size, n_heads, head_dim, n_nodes)
-#         # compatibility = compatibility.squeeze(2)  # (batch_size, n_heads, num_agents, n_nodes)
-#
-#         mask = mask.unsqueeze(1).expand_as(compatibility)
-#         u_i = compatibility.masked_fill(mask.bool(), float(-10000))
-#
-#         scores = F.softmax(u_i, dim=-1)  # (batch_size, n_heads, num_agents, n_nodes)
-#         scores = scores.unsqueeze(3)
-#
-#         out_put = torch.matmul(scores, V.unsqueeze(
-#             2))  # (batch_size, n_heads, num_agents, 1, n_nodes) * (batch_size, n_heads, 1, n_nodes, head_dim)
-#         out_put = out_put.squeeze(3).view(batch_size, num_agents,
-#                                           self.hidden_dim)  # (batch_size, num_agents, hidden_dim)
-#
-#         return self.fc(out_put)  # (batch_size, num_agents, hidden_dim)
-#
-#
-# class ProbAttention(nn.Module):
-#     def __init__(self, n_heads, input_dim, hidden_dim):
-#         super(ProbAttention, self).__init__()
-#         self.n_heads = n_heads
-#         self.input_dim = input_dim
-#         self.hidden_dim = hidden_dim
-#
-#         self.norm = 1 / math.sqrt(hidden_dim)
-#         self.k = nn.Linear(input_dim, hidden_dim, bias=False)
-#         self.mhalayer = Attention1(n_heads, 1, input_dim, hidden_dim)
-#
-#         if INIT:
-#             for name, p in self.named_parameters():
-#                 if 'weight' in name:
-#                     if len(p.size()) >= 2:
-#                         nn.init.orthogonal_(p, gain=1)
-#                 elif 'bias' in name:
-#                     nn.init.constant_(p, 0)
-#
-#     # @autocast(device_type='cuda')
-#     def forward(self, state_t, context, context_d, n_d, mask, T):
-#         '''
-#         :param state_t: (batch_size, num_agents, input_dim * 3)
-#         :param context: (batch_size, n_nodes, input_dim)
-#         :param mask: selected nodes (batch_size, num_agents, n_nodes)
-#         :return: softmax_score
-#         '''
-#         batch_size, num_agents, _ = state_t.size()
-#         x_d = self.mhalayer(state_t[:, 0:n_d, :], context_d, mask[:, 0:n_d, :])
-#         x_r = self.mhalayer(state_t[:, n_d:num_agents, :], context, mask[:, n_d:num_agents, :])
-#         x = torch.cat([x_d, x_r], 1)
-#         # x = self.mhalayer(state_t, context_d, mask)
-#         n_nodes = context.size(1)
-#
-#         Q = x.view(batch_size, num_agents, -1)
-#         K = self.k(context).view(batch_size, n_nodes, -1)
-#
-#         compatibility = self.norm * torch.matmul(Q, K.transpose(1, 2))  # (batch_size, num_agents, n_nodes)
-#
-#         mask = mask.expand_as(compatibility)
-#         compatibility = compatibility.masked_fill(mask.bool(), float(-10000))
-#
-#         return F.softmax(compatibility / T, dim=-1)  # (batch_size, num_agents, n_nodes)
-#
-#
-# class Decoder1(nn.Module):
-#     def __init__(self, input_dim, hidden_dim):
-#         super(Decoder1, self).__init__()
-#
-#         super(Decoder1, self).__init__()
-#         self.input_dim = input_dim
-#         self.hidden_dim = hidden_dim
-#
-#         self.prob = ProbAttention(8, input_dim, hidden_dim)
-#
-#         # self.fcr = nn.Linear(hidden_dim, hidden_dim, bias=False)
-#         # self.fc1r = nn.Linear(hidden_dim, hidden_dim, bias=False)
-#         self.fcd = nn.Linear(hidden_dim, hidden_dim, bias=False)
-#         # self.fc1d = nn.Linear(hidden_dim, hidden_dim, bias=False)
-#         self.Wd = nn.Linear(hidden_dim + 3, hidden_dim, bias=False)
-#         # self.Wr = nn.Linear(hidden_dim + 3, hidden_dim, bias=False)
-#         # self.bd = nn.BatchNorm1d(hidden_dim)
-#         # self.br = nn.BatchNorm1d(hidden_dim)
-#         if INIT:
-#             for name, p in self.named_parameters():
-#                 if 'weight' in name:
-#                     if len(p.size()) >= 2:
-#                         nn.init.orthogonal_(p, gain=1)
-#                 elif 'bias' in name:
-#                     nn.init.constant_(p, 0)
-#
-#     # @autocast(device_type='cuda')
-#     def forward(self, emb_d, emb_r, pool_d, pool_r, capacity, demand, battery, time_window, num_depots, num_nodes,
-#                 num_drones, num_robots, edge_attr_d, edge_attr_r, T, greedy=False):
-#         batch_size, _, hidden = emb_d.size()
-#         mask1 = emb_d.new_zeros((batch_size, num_drones + num_robots, emb_d.size(1)))
-#         mask = emb_d.new_zeros((batch_size, num_drones + num_robots, emb_d.size(1)))
-#
-#         battery = battery.view(batch_size, num_drones + num_robots).unsqueeze(2).float().to(device)
-#         capacity = capacity.view(batch_size, num_drones + num_robots).unsqueeze(2)
-#         # U_t = torch.zeros(batch_size, num_drones + num_robots).unsqueeze(2)  # load
-#         T_t = torch.zeros(batch_size, num_drones + num_robots).unsqueeze(2).float().to(device)  # time
-#         demands = demand.view(batch_size, emb_d.size(1))  # (batch_size, nodes)
-#         time_window = time_window.view(batch_size, emb_d.size(1))  # (batch_size, nodes)
-#         edge_attr_d = edge_attr_d.view(batch_size, num_depots + num_nodes, num_depots + num_nodes)
-#         edge_attr_r = edge_attr_r.view(batch_size, num_depots + num_nodes, num_depots + num_nodes)
-#         index = torch.zeros(batch_size, num_drones + num_robots).to(device).long()
-#
-#         E_d = battery[0, 0].item()
-#         C_d = capacity[0, 0].item()
-#         E_r = battery[0, num_drones + num_robots - 1].item()
-#         C_r = capacity[0, num_drones + num_robots - 1].item()
-#         E = [E_d, E_r]
-#         C = [C_d, C_r]
-#
-#         log_ps = []
-#         actions = []
-#         time_log = []
-#         BL = []
-#
-#         stepsize = 0
-#
-#         while (mask1[:, :, num_depots:].max(dim=1)[0]).eq(0).any():
-#
-#             if not (mask1[:, :, num_depots:].max(dim=1)[0]).eq(0).any() or stepsize > 2*num_nodes:
-#                 break
-#
-#             context = []
-#             decoder_input = []
-#             for num in range(num_drones + num_robots):
-#
-#                 if stepsize == 0:
-#                     depot = np.random.randint(0, num_depots, 1)[0]
-#                     s_t_i = emb_d[:, depot, :]
-#                     index[:, num] = depot
-#
-#
-#                 else:
-#                     s_t_i = s_t[:, num, :]
-#
-#                 if num < num_drones:
-#                     context.append((self.Wd(
-#                         torch.cat([s_t_i, capacity[:, num], T_t[:, num], battery[:, num]], -1))).unsqueeze(1))
-#
-#                 else:
-#                     context.append((self.Wd(
-#                         torch.cat([s_t_i, capacity[:, num], T_t[:, num], battery[:, num]], -1)
-#
-#                      )).unsqueeze(1))
-#
-#             context = torch.cat(context, dim=1)
-#
-#             if stepsize == 0:
-#                 actions.append(index.data.unsqueeze(2))
-#             # input_d = torch.cat(
-#             #     [pool_d.unsqueeze(1).expand(emb_d.size(0), num_drones + num_robots, pool_d.size(1)), context], -1)
-#             #
-#             # input_r = torch.cat(
-#             #     [pool_r.unsqueeze(1).expand(emb_d.size(0), num_drones + num_robots, pool_r.size(1)), context], -1)
-#             #
-#             # veh_d_mean = (self.fcd(input_d)).mean(dim=1)
-#             # veh_r_mean = (self.fcd(input_r)).mean(dim=1)
-#             veh_d_mean = pool_d + (self.fcd(context[:, :num_drones, :])).mean(dim=1)
-#             veh_r_mean = pool_r + (self.fcd(context[:, num_drones:, :])).mean(dim=1)
-#
-#             for num in range(num_drones + num_robots):
-#
-#                 if battery[0, num].item() == E_d:
-#                     # _input = (veh_d_mean + self.fc1d(context[:, num, :])).unsqueeze(1)
-#
-#                     _input = (veh_d_mean + context[:, num, :]).unsqueeze(1)
-#
-#                 elif battery[0, num].item() == E_r:
-#                     # _input = (veh_r_mean + self.fc1r(context[:, num, :])).unsqueeze(1)
-#                     _input = (veh_r_mean + context[:, num, :]).unsqueeze(1)
-#
-#                 decoder_input.append(_input)
-#
-#             decoder_input = torch.cat(decoder_input, dim=1)
-#
-#             if stepsize == 0:
-#                 mask, mask1 = update_mask(demands, time_window, capacity, T_t, battery, num_drones, index, mask1, E,
-#                                           stepsize)
-#
-#             p = self.prob(decoder_input, emb_r, emb_d, num_drones, mask, T)
-#             p = torch.where(torch.isnan(p) | torch.isinf(p), torch.tensor(0.0001, dtype=p.dtype), p)
-#             # dist = Categorical(p)
-#             if greedy:
-#                 _, index = p.max(dim=-1)
-#                 index = resolve_conflicts(p, index, num_depots)
-#             else:
-#                 non_depot_mask = (mask1.max(dim=1)[0] == 1).unsqueeze(1).expand_as(mask)
-#                 p = p.masked_fill(non_depot_mask, 0.0001)
-#                 index = torch.multinomial(p.view(-1, p.size(-1)), 1).view(batch_size, num_drones + num_robots)
-#                 # index = resolve_conflicts_multinomial(p, index, non_depot_mask, num_depots)
-#                 # dist = Categorical(p)
-#
-#             actions.append(index.data.unsqueeze(2))
-#             # log_p = dist.log_prob(index)
-#             batch_indices = torch.arange(batch_size).unsqueeze(1).expand(batch_size, num_drones + num_robots)
-#             agent_indices = torch.arange(num_drones + num_robots).unsqueeze(0).expand(batch_size,
-#                                                                                       num_drones + num_robots)
-#
-#             log_p = torch.log(p[batch_indices, agent_indices, index] + 1e-2)
-#
-#             is_done = (mask1[:, :, num_depots:].max(dim=1)[0].sum(1).unsqueeze(1).expand(batch_size,
-#                                                                                          num_drones + num_robots) >= (
-#                                emb_d.size(1) - num_depots)).float()
-#             log_p = log_p * (1. - is_done)
-#
-#             log_ps.append(log_p.unsqueeze(2))
-#
-#             capacity, T_t, battery = update_state(demands, time_window, battery, T_t, capacity, index, E, C, num_drones,
-#                                                   actions, edge_attr_r, edge_attr_d, stepsize)
-#
-#             capacity, T_t, battery = capacity.unsqueeze(2), T_t.unsqueeze(2), battery.unsqueeze(2)
-#             time_log.append(T_t)
-#             BL.append(battery)
-#             mask, mask1 = update_mask(demands, time_window, capacity, T_t, battery, num_drones, index, mask1, E,
-#                                       stepsize)
-#
-#             s_t = []
-#             for num in range(num_drones + num_robots):
-#                 if num < num_drones:
-#                     _input = torch.gather(emb_d, 1, index[:, num].unsqueeze(1).unsqueeze(2).expand(emb_d.size(0), -1,
-#                                                                                                    emb_d.size(2)))
-#                 else:
-#                     _input = torch.gather(emb_r, 1, index[:, num].unsqueeze(1).unsqueeze(2).expand(emb_r.size(0), -1,
-#                                                                                                    emb_r.size(2)))
-#                 s_t.append(_input)
-#
-#             s_t = torch.cat(s_t, dim=1)
-#
-#             stepsize += 1
-#
-#         log_ps = torch.cat(log_ps, dim=2)
-#         time_log = torch.cat(time_log, dim=2)
-#         BL = torch.cat(BL, dim=2)
-#         actions = torch.cat(actions, dim=2)
-#         # print(actions[0:10])
-#         log_p = log_ps.sum(dim=2)
-#
-#         return actions, log_p, time_log, BL
 
 
 class Model(nn.Module):
