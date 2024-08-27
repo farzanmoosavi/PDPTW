@@ -336,7 +336,7 @@ def reward1(time_window, tour_indices, edge_attr_d, edge_attr_r, time, charge, n
 
     alpha, alpha1, alpha2, alpha3 = 1, 0.4, 0.3, 0.01
     # charge = (charge - charge.min()) / (charge.max() - charge.min())
-    total_cost = torch.zeros(batch_size, n_agent).to(device)
+    total_cost = torch.zeros(batch_size, n_agent).cuda()
 
     for step in range(steps - 1):
         previous_indices = tour_indices[:, :, step]
@@ -357,11 +357,11 @@ def reward1(time_window, tour_indices, edge_attr_d, edge_attr_r, time, charge, n
         # current_time_window = torch.gather(time_window, 1, current_indices)
         pickup_t_window = torch.gather(time_window, 1, current_indices) * is_pickup
         s_pickup = torch.rand(batch_size, n_agent)
-        time_pickup = T_current * is_pickup + s_pickup.to(device)
+        time_pickup = T_current * is_pickup + s_pickup.cuda()
 
         delivery_t_window = torch.gather(time_window, 1, current_indices) * is_delivery
         s_delivery = 1 + torch.rand(batch_size, n_agent)
-        time_delivery = T_current * is_delivery + s_delivery.to(device)
+        time_delivery = T_current * is_delivery + s_delivery.cuda()
 
         penalty_pickup = torch.where(time_pickup - pickup_t_window < 0, torch.full_like(pickup_t_window, 50),
                                      alpha1 * (time_pickup - pickup_t_window))
