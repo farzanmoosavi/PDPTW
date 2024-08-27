@@ -110,7 +110,7 @@ def rollout1(model, dataset,num_robots, num_drones, n_nodes):
     #     return cost.cpu()
     # totall_cost = torch.cat([eval_model_bat(bat.to(device))for bat in dataset], 0)
     # return totall_cost
-      bat = {key: value.to(device) for key, value in bat.items() if isinstance(value, torch.Tensor)}
+      bat = {key: value.cuda() for key, value in bat.items() if isinstance(value, torch.Tensor)}
       with torch.no_grad():
           cost, _, Time, BL = model(bat, num_drones, num_robots, True)
           cost = reward1(bat['time_window'], cost.detach(), bat['edge_attr_d'], bat['edge_attr_r'], Time.detach(), BL.detach(), num_drones)
@@ -142,7 +142,7 @@ class RolloutBaseline():
 
         with torch.no_grad():
             tour, _, time, charge = self.model(x, num_drones, num_robots, greedy=True, T=1, checkpoint_encoder=True, training=True)
-            v = reward1(x['time_window'], tour.detach(), x['edge_attr_d'].detach(), x['edge_attr_r'].detach(), time.detach(), charge.detach(), num_drones)
+            v = reward1(x['time_window'], tour.detach(), x['edge_attr_d'], x['edge_attr_r'], time.detach(), charge.detach(), num_drones)
 
         # There is no loss
         return v
