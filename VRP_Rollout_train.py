@@ -220,7 +220,7 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 n_nodes = 100
 depots = 3  # included in n_nodes
 n_robots = 3
-n_drones = 2
+n_drones = 3
 print(device)
 steps = n_nodes + depots
 
@@ -300,11 +300,11 @@ def train():
 
     params = OrderedDict(
         lr=[1e-4],
-        batch_size=[128],
+        batch_size=[512],
         hidden_node_dim=[128],
         hidden_edge_dim=[16],
-        conv_laysers=[4],
-        data_size=[5120]
+        conv_laysers=[3],
+        data_size=[1280000]
 
     )
     runs = RunBuilder.get_runs(params)
@@ -317,7 +317,7 @@ def train():
               hidden_node_dim, hidden_edge_dim, conv_laysers)
         data_loder = create_data(n_nodes, depots, n_robots, n_drones, data_size, batch_size=batch_size, num_workers=0,
                                  use_cache=True, cache_file="dataset_cache.pkl")
-        valid_loder = create_data(n_nodes, depots, n_robots, n_drones, 512, batch_size=batch_size, num_workers=0,
+        valid_loder = create_data(n_nodes, depots, n_robots, n_drones, 100000, batch_size=batch_size, num_workers=0,
                                   use_cache=True, cache_file="dataset_cache1.pkl")
         print('Data creation completed')
 
@@ -350,13 +350,13 @@ def train():
                 forward_start = time.time()
                 tour_indices, tour_logp, Time, BL = actor(batch, n_drones, n_robots, greedy=False, T=1,
                                                           checkpoint_encoder=True, training=True)
-                measure_time(forward_start, "Forward pass")
+                # measure_time(forward_start, "Forward pass")
                 reward_start = time.time()
                 rewar = reward1(batch['time_window'], tour_indices.detach(), batch['edge_attr_d'],
                                 batch['edge_attr_r'], Time.detach(),
                                 BL.detach(), n_drones)
                 base_reward = rol_baseline.eval(batch, n_drones, n_robots, steps)
-                measure_time(reward_start, "Reward and baseline evaluation")
+                # measure_time(reward_start, "Reward and baseline evaluation")
 
                 advantage = (rewar - base_reward)
                 if not advantage.ne(0).any():
