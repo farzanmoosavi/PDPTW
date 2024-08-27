@@ -274,7 +274,7 @@ def PC_d(m_pl, v_g):
     A2 = 0.1
     zeta = 1.4
     n = 8
-    v_w = 15 * np.random.random() * torch.rand_like(v_g)
+    v_w = 20 * np.random.random() * torch.rand_like(v_g)
     psi_w = math.pi * 2 * np.random.random()
     psi = 0
 
