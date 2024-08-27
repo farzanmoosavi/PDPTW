@@ -217,7 +217,7 @@ from torch.amp import autocast
 # torch.cuda.empty_cache()
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 # device = torch.device('cpu')
-n_nodes = 100
+n_nodes = 120
 depots = 3  # included in n_nodes
 n_robots = 3
 n_drones = 3
@@ -347,11 +347,11 @@ def train():
                 batch = {key: value.to(device) for key, value in batch.items() if isinstance(value, torch.Tensor)}
 
                 # with autocast(device_type='cuda'):
-                forward_start = time.time()
+                # forward_start = time.time()
                 tour_indices, tour_logp, Time, BL = actor(batch, n_drones, n_robots, greedy=False, T=1,
                                                           checkpoint_encoder=True, training=True)
                 # measure_time(forward_start, "Forward pass")
-                reward_start = time.time()
+                # reward_start = time.time()
                 rewar = reward1(batch['time_window'], tour_indices.detach(), batch['edge_attr_d'],
                                 batch['edge_attr_r'], Time.detach(),
                                 BL.detach(), n_drones)
@@ -387,9 +387,9 @@ def train():
 
                 # Explicitly delete variables to free memory
                 del tour_indices, tour_logp, Time, BL, rewar, base_reward, advantage, actor_loss
-                # torch.cuda.empty_cache()
+                #torch.cuda.empty_cache()
 
-                step = 20
+                step = 200
                 if (batch_idx + 1) % step == 0:
                     end = time.time()
                     times.append(end - start)
