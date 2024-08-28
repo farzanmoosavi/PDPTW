@@ -131,7 +131,7 @@ def train():
         hidden_node_dim=[128],
         hidden_edge_dim=[16],
         conv_laysers=[3],
-        data_size=[1280000]
+        data_size=[512000]
 
     )
     runs = RunBuilder.get_runs(params)
