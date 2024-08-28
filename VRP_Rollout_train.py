@@ -15,6 +15,7 @@ from itertools import product
 from torch.optim.lr_scheduler import LambdaLR
 from rolloutBaseline1 import RolloutBaseline
 from torch.amp import autocast
+from itertools import product
 
 # os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "max_split_size_mb:54"
 # torch.cuda.empty_cache()
@@ -33,6 +34,29 @@ def measure_time(start_time, name):
     print(f"{name} took: {end_time - start_time:.4f} seconds")
     return end_time
 
+def save_checkpoint(epoch, model, optimizer, scheduler, filepath, costs):
+    checkpoint = {
+        'epoch': epoch,
+        'model_state_dict': model.state_dict(),
+        'optimizer_state_dict': optimizer.state_dict(),
+        'scheduler_state_dict': scheduler.state_dict(),
+        'costs': costs,
+        'rng_state': torch.get_rng_state(),
+        'cuda_rng_state': torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None
+    }
+    torch.save(checkpoint, os.path.join(filepath, f"checkpoint_{epoch}.pth"))
+    print(f"Checkpoint saved for epoch {epoch}")
+
+
+def load_checkpoint(model, optimizer, scheduler, filepath):
+    checkpoint = torch.load(filepath)
+    model.load_state_dict(checkpoint['model_state_dict'])
+    optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+    scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+    torch.set_rng_state(checkpoint['rng_state'])
+    if torch.cuda.is_available() and checkpoint.get('cuda_rng_state') is not None:
+        torch.cuda.set_rng_state_all(checkpoint['cuda_rng_state'])
+    return checkpoint['epoch'] + 1, checkpoint['costs']
 
 def clip_grad_norms(param_groups, max_norm=math.inf):
     """
@@ -114,6 +138,7 @@ def train():
     # -------------------------------------------------------------------------------------------------------------------------------------
 
     folder = 'Vrp-{}-GAT'.format(n_nodes)
+    os.makedirs(folder, exist_ok=True)
     filename = 'rollout'
     for lr, batch_size, hidden_node_dim, hidden_edge_dim, conv_laysers, data_size in runs:
         print('lr', 'batch_size', 'hidden_node_dim', 'hidden_edge_dim', 'conv_laysers:', lr, batch_size,
@@ -126,18 +151,20 @@ def train():
 
         actor = Model(4, hidden_node_dim, 1, hidden_edge_dim, conv_laysers=conv_laysers).cuda()
         rol_baseline = RolloutBaseline(actor, valid_loder, n_robots=n_robots, n_drones=n_drones, n_nodes=steps)
-        # initWeights(actor)
-        filepath = os.path.join(folder, filename)
-        '''path = os.path.join(filepath,'%s' % 3)
-                if os.path.exists(path):
-                    path1 = os.path.join(path, 'actor.pt')
-                    self.agent.old_polic.load_state_dict(torch.load(path1, device))'''
+
 
         actor_optim = optim.Adam(actor.parameters(), lr=lr)
+        # Load from checkpoint if it exists
+        checkpoint_path = os.path.join(folder, "checkpoint_6.pth")
+        if os.path.exists(checkpoint_path):
+            start_epoch, costs = load_checkpoint(actor, actor_optim, scheduler, checkpoint_path)
+            print(f"Resuming training from epoch {start_epoch}")
+        else:
+            start_epoch = 0
+            costs = []
+            print("Starting training from scratch")
 
-        # scaler = GradScaler()  # Mixed precision scaler
-        costs = []
-        for epoch in range(100):
+        for epoch in range(start_epoch, 100):
             print("epoch:", epoch, "------------------------------------------------")
             actor.train()
             scheduler = LambdaLR(actor_optim, lr_lambda=lambda f: 0.96 ** epoch)
@@ -189,10 +216,10 @@ def train():
                 losses.append(torch.mean(actor_loss.detach()).item())
 
                 # Explicitly delete variables to free memory
-                del tour_indices, tour_logp, Time, BL, rewar, base_reward, advantage, actor_loss
+                # del tour_indices, tour_logp, Time, BL, rewar, base_reward, advantage, actor_loss
                 #torch.cuda.empty_cache()
 
-                step = 200
+                step = 200    
                 if (batch_idx + 1) % step == 0:
                     end = time.time()
                     times.append(end - start)
@@ -215,7 +242,7 @@ def train():
             cost = cost.mean()
             costs.append(cost.item())
             np.savetxt('myarray.txt', costs)
-
+            save_checkpoint(epoch, actor, actor_optim, scheduler, folder, costs)
             print('Problem:PDPTW''%s' % n_nodes, '/ Average Cost:', cost.item())
             print(costs)
 
